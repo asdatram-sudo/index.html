@@ -1,49 +1,173 @@
-<script>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NSCT Wallet</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg: var(--tg-theme-bg-color, #ffffff);
+            --text: var(--tg-theme-text-color, #000000);
+            --hint: var(--tg-theme-hint-color, #999999);
+            --button: var(--tg-theme-button-color, #007aff);
+            --sec-bg: var(--tg-theme-secondary-bg-color, #f2f2f7);
+        }
+        body { 
+            font-family: -apple-system, system-ui, sans-serif; 
+            background: var(--bg); 
+            color: var(--text); 
+            margin: 0; 
+            padding: 16px; 
+            transition: all 0.3s ease; 
+            overflow: hidden;
+        }
+        
+        .card { 
+            background: var(--sec-bg); 
+            border-radius: 20px; 
+            padding: 20px; 
+            text-align: center; 
+            margin-bottom: 20px; 
+            box-shadow: 0 8px 24px rgba(0,0,0,0.05); 
+        }
+        
+        .balance-label { font-size: 13px; color: var(--hint); text-transform: uppercase; font-weight: 600; }
+        .balance-val { font-size: 44px; font-weight: 800; margin: 8px 0; letter-spacing: -1px; }
+        
+        .input-group { 
+            background: var(--bg); 
+            border-radius: 12px; 
+            padding: 12px; 
+            margin-bottom: 15px; 
+            display: flex; 
+            flex-direction: column;
+            border: 1px solid var(--sec-bg);
+        }
+        
+        input { 
+            background: none; 
+            border: none; 
+            color: var(--text); 
+            font-size: 17px; 
+            outline: none; 
+            padding: 10px 0; 
+            border-bottom: 1px solid var(--hint); 
+            margin-bottom: 8px; 
+        }
+        
+        input:last-child { border-bottom: none; margin-bottom: 0; }
+        
+        .main-btn { 
+            background: var(--button); 
+            color: white; 
+            border: none; 
+            width: 100%; 
+            padding: 16px; 
+            border-radius: 14px; 
+            font-size: 17px; 
+            font-weight: 600; 
+            cursor: pointer; 
+            transition: opacity 0.2s;
+        }
+        
+        .main-btn:active { opacity: 0.7; }
+        
+        .secondary-btn { 
+            background: none; 
+            color: var(--button); 
+            border: none; 
+            padding: 10px; 
+            font-size: 15px; 
+            width: 100%; 
+            margin-top: 10px; 
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="balance-label">Мой Баланс</div>
+        <div class="balance-val" id="balance">0.00 NSCT</div>
+        <div id="acc_num" style="color: var(--hint); font-weight: 500;">Загрузка счета...</div>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top:0; font-size: 18px;">Быстрый перевод</h3>
+        <div class="input-group">
+            <input type="text" id="target_acc" placeholder="Номер счета (3 цифры)" maxlength="3">
+            <input type="number" id="amount" placeholder="Сумма NSCT" inputmode="decimal">
+        </div>
+        <button class="main-btn" onclick="sendTransfer()">Отправить NSCT</button>
+        <button class="secondary-btn" onclick="scanQR()">📷 Сканировать QR</button>
+    </div>
+
+    <script>
         const tg = window.Telegram.WebApp;
         tg.ready();
         tg.expand();
+        
         const user = tg.initDataUnsafe.user;
 
+        // Функция загрузки данных с твоего Python-сервера через ngrok
         async function loadData() {
             if (!user) {
-                console.error("Данные пользователя не найдены");
+                document.getElementById('acc_num').innerText = "Ошибка: Откройте в Telegram";
                 return;
             }
+
             try {
-                // ВАЖНО: Убрал порт :8080, так как ngrok работает через стандартный https (443)
-                const url = `https://ongoing-rutha-pedicellar.ngrok-free.dev/api/balance?user_id=${user.id}`;
+                // Ссылка на твой ngrok (БЕЗ порта :8080 в конце ссылки, ngrok сам знает куда слать)
+                const apiUrl = `https://ongoing-rutha-pedicellar.ngrok-free.dev/api/balance?user_id=${user.id}`;
                 
-                const response = await fetch(url);
+                const response = await fetch(apiUrl);
+                if (!response.ok) throw new Error('Ошибка сервера');
+                
                 const data = await response.json();
                 
-                document.getElementById('balance').innerText = `${data.balance.toFixed(2)} NSCT`;
-                document.getElementById('acc_num').innerText = `Счет: ${data.account || 'Не привязан'}`;
-            } catch (e) { 
-                console.error("Ошибка загрузки баланса:", e);
-                document.getElementById('balance').innerText = "Ошибка API";
+                // Обновляем интерфейс
+                document.getElementById('balance').innerText = `${parseFloat(data.balance).toFixed(2)} NSCT`;
+                document.getElementById('acc_num').innerText = `Ваш счет: ${data.account || '---'}`;
+                
+            } catch (e) {
+                console.error("Ошибка:", e);
+                document.getElementById('balance').innerText = "---";
+                document.getElementById('acc_num').innerText = "Сервер не отвечает";
             }
         }
 
+        // Функция отправки перевода через бота
         function sendTransfer() {
             const acc = document.getElementById('target_acc').value;
             const amt = document.getElementById('amount').value;
             
-            if(!acc || !amt) return tg.showAlert("Заполните все поля!");
+            if(!acc || !amt || amt <= 0) {
+                return tg.showAlert("Введите корректный счет и сумму!");
+            }
 
+            // Отправляем данные в Telegram бот
             tg.sendData(JSON.stringify({
                 action: "transfer",
                 to: acc,
                 amount: parseFloat(amt)
             }));
-            tg.close();
+            
+            tg.close(); // Закрываем Mini App
         }
 
+        // Функция сканирования QR
         function scanQR() {
             tg.showScanQrPopup({ text: "Наведите на QR-код кошелька" }, (data) => {
-                document.getElementById('target_acc').value = data;
-                tg.closeScanQrPopup();
+                if(data) {
+                    document.getElementById('target_acc').value = data.trim();
+                    tg.closeScanQrPopup();
+                }
+                return true;
             });
         }
 
+        // Запуск загрузки при открытии
         loadData();
     </script>
+</body>
+</html>
