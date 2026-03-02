@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -10,48 +10,82 @@
             --text: var(--tg-theme-text-color, #000000);
             --hint: var(--tg-theme-hint-color, #999999);
             --button: var(--tg-theme-button-color, #007aff);
+            --sec-bg: var(--tg-theme-secondary-bg-color, #f2f2f7);
         }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-               background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .wallet-card { background: var(--tg-theme-secondary-bg-color, #f2f2f7); width: 100%; border-radius: 20px; padding: 25px; box-sizing: border-box; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-        .balance-label { font-size: 14px; color: var(--hint); text-transform: uppercase; letter-spacing: 1px; }
-        .balance-amount { font-size: 42px; font-weight: 700; margin: 10px 0; }
-        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; margin-top: 20px; }
-        button { background-color: var(--button); color: white; border: none; padding: 15px; border-radius: 12px; font-weight: 600; font-size: 16px; cursor: pointer; transition: opacity 0.2s; }
-        button:active { opacity: 0.7; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 16px; transition: all 0.3s ease; }
+        
+        /* Card Style */
+        .card { background: var(--sec-bg); border-radius: 20px; padding: 20px; text-align: center; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.05); }
+        .balance-label { font-size: 13px; color: var(--hint); text-transform: uppercase; font-weight: 600; }
+        .balance-val { font-size: 44px; font-weight: 800; margin: 8px 0; letter-spacing: -1px; }
+        
+        /* Input Style */
+        .input-group { background: var(--sec-bg); border-radius: 12px; padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; }
+        input { background: none; border: none; color: var(--text); font-size: 17px; outline: none; padding: 8px 0; border-bottom: 1px solid var(--hint); margin-bottom: 8px; }
+        
+        /* Buttons */
+        .main-btn { background: var(--button); color: white; border: none; width: 100%; padding: 16px; border-radius: 14px; font-size: 17px; font-weight: 600; cursor: pointer; }
+        .secondary-btn { background: none; color: var(--button); border: none; padding: 10px; font-size: 15px; width: 100%; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <div class="wallet-card">
-        <div class="balance-label">Доступный баланс</div>
-        <div class="balance-amount" id="bal">0.00 NSCT</div>
-        <div id="user-name" style="color: var(--hint); font-size: 14px;">Инициализация...</div>
+    <div class="card">
+        <div class="balance-label">Мой Баланс</div>
+        <div class="balance-val" id="balance">0.00 NSCT</div>
+        <div id="acc_num" style="color: var(--hint);">Счет: ---</div>
     </div>
 
-    <div class="btn-group">
-        <button onclick="tg.showAlert('Функция отправки скоро появится')">Отправить</button>
-        <button onclick="tg.close()">Закрыть</button>
+    <div class="card">
+        <h3 style="margin-top:0">Быстрый перевод</h3>
+        <div class="input-group">
+            <input type="text" id="target_acc" placeholder="Номер счета (3 цифры)">
+            <input type="number" id="amount" placeholder="Сумма NSCT">
+        </div>
+        <button class="main-btn" onclick="sendTransfer()">Отправить NSCT</button>
+        <button class="secondary-btn" onclick="scanQR()">📷 Сканировать QR</button>
     </div>
 
     <script>
-    const tg = window.Telegram.WebApp;
-    tg.ready();
-    tg.expand();
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        const user = tg.initDataUnsafe.user;
 
-    const user = tg.initDataUnsafe.user;
-    if (user) {
-        document.getElementById('user-name').innerText = `@${user.username}`;
-        
-        // ЗАПРОС К БОТУ ЗА РЕАЛЬНЫМ БАЛАНСОМ
-        fetch(`http://92.245.124.247:8080/api/balance?user_id=${user.id}`)
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById('bal').innerText = `${data.balance.toFixed(2)} NSCT`;
-            })
-            .catch(err => {
-                document.getElementById('bal').innerText = "Ошибка связи";
+        // 1. ПОЛУЧЕНИЕ ДАННЫХ С СЕРВЕРА
+        async function loadData() {
+            try {
+                // Замени IP на свой адрес (ngrok или сервер)
+                const response = await fetch(`http://92.245.124.247:8080/api/balance?user_id=${user.id}`);
+                const data = await response.json();
+                document.getElementById('balance').innerText = `${data.balance.toFixed(2)} NSCT`;
+                document.getElementById('acc_num').innerText = `Счет: ${data.account || 'Не привязан'}`;
+            } catch (e) { console.error("Ошибка загрузки"); }
+        }
+
+        // 2. ОТПРАВКА ДАННЫХ В БОТ
+        function sendTransfer() {
+            const acc = document.getElementById('target_acc').value;
+            const amt = document.getElementById('amount').value;
+            
+            if(!acc || !amt) return tg.showAlert("Заполните все поля!");
+
+            // Отправляем данные обратно в бота
+            tg.sendData(JSON.stringify({
+                action: "transfer",
+                to: acc,
+                amount: parseFloat(amt)
+            }));
+            tg.close(); // Закрываем приложение после отправки
+        }
+
+        // 3. СКАНЕР QR (Apple-фишка)
+        function scanQR() {
+            tg.showScanQrPopup({ text: "Наведите на QR-код кошелька" }, (data) => {
+                document.getElementById('target_acc').value = data;
+                tg.closeScanQrPopup();
             });
-    }
-</script>
+        }
+
+        loadData();
+    </script>
 </body>
 </html>
